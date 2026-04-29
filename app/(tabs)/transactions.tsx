@@ -11,6 +11,7 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { fetchAllFinanceData, getCustomDateRange } from "../../services/notion";
+import { useDateStore } from "@/services/store";
 
 const CATEGORY_ICONS: Record<string, string> = {
   "Food & Beverages": "🍔",
@@ -35,7 +36,16 @@ export default function Transactions() {
   const [activeFilter, setActiveFilter] = useState("All");
   const [filters, setFilters] = useState<string[]>(["All"]);
 
-  const { start, end } = getCustomDateRange();
+  // const { start, end } = getCustomDateRange();
+  const { startDate, endDate, setStartDate, setEndDate } = useDateStore();
+
+  const start = startDate;
+  const end = endDate;
+  function inRange(dateStr: string) {
+    if (!dateStr) return false;
+    const d = new Date(dateStr);
+    return d >= start && d <= end;
+  }
 
   useEffect(() => {
     fetchAllFinanceData(start, end).then((data) => {
@@ -44,7 +54,11 @@ export default function Transactions() {
         ...data.expenses.map((i: any) => ({ ...i, type: "expense" })),
         ...data.saving.map((i: any) => ({ ...i, type: "saving" })),
         ...data.investment.map((i: any) => ({ ...i, type: "investment" })),
-      ].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+      ]
+        .filter((i: any) => inRange(i.date))
+        .sort(
+          (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime(),
+        );
 
       setAllItems(combined);
 
@@ -54,7 +68,7 @@ export default function Transactions() {
       setFilters(["All", ...cats]);
       setLoading(false);
     });
-  }, []);
+  }, [startDate, endDate]);
 
   const filtered = allItems.filter((t) => {
     const matchSearch = t.name.toLowerCase().includes(search.toLowerCase());

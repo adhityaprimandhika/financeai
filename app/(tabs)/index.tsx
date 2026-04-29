@@ -201,18 +201,24 @@ export default function Dashboard() {
         <View style={styles.summaryRow}>
           <View style={styles.summaryCard}>
             <Text>💸</Text>
-            <Text>Expenses</Text>
-            <Text>IDR {totalExpenses.toLocaleString("id-ID")}</Text>
+            <Text style={styles.cardLabel}>Expenses</Text>
+            <Text style={styles.subBalance}>
+              IDR {totalExpenses.toLocaleString("id-ID")}
+            </Text>
           </View>
           <View style={styles.summaryCard}>
             <Text>🏦</Text>
-            <Text>Saving</Text>
-            <Text>IDR {totalSaving.toLocaleString("id-ID")}</Text>
+            <Text style={styles.cardLabel}>Saving</Text>
+            <Text style={styles.subBalance}>
+              IDR {totalSaving.toLocaleString("id-ID")}
+            </Text>
           </View>
           <View style={styles.summaryCard}>
             <Text>📈</Text>
-            <Text>Investment</Text>
-            <Text>IDR {totalInvestment.toLocaleString("id-ID")}</Text>
+            <Text style={styles.cardLabel}>Investment</Text>
+            <Text style={styles.subBalance}>
+              IDR {totalInvestment.toLocaleString("id-ID")}
+            </Text>
           </View>
         </View>
 
@@ -262,6 +268,12 @@ const styles = StyleSheet.create({
   balance: {
     color: "#1A1A2E",
     fontSize: 30,
+    fontWeight: "bold",
+    marginVertical: 8,
+  },
+  subBalance: {
+    color: "#1A1A2E",
+    fontSize: 14,
     fontWeight: "bold",
     marginVertical: 8,
   },

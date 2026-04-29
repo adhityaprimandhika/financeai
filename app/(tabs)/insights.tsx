@@ -34,7 +34,12 @@ interface Message {
   text: string;
 }
 
-function buildFinanceSummary(data: FinanceData) {
+function buildFinanceSummary(
+  data: FinanceData,
+  transactions: any[],
+  start?: Date,
+  end?: Date,
+) {
   const totalIncome = data.income.reduce((s, i) => s + (i.amount || 0), 0);
   const totalExpenses = data.expenses.reduce((s, i) => s + (i.amount || 0), 0);
   const totalSavings = data.saving.reduce((s, i) => s + (i.amount || 0), 0);
@@ -62,6 +67,21 @@ function buildFinanceSummary(data: FinanceData) {
     )
     .join(", ");
 
+  const formattedTransactions = transactions.slice(0, 50).map((t) => ({
+    name: t.name,
+    amount: t.amount,
+    type: t.type,
+    category: t.category,
+    date: t.date,
+  }));
+
+  const fmt = (d: Date) =>
+    d.toLocaleDateString("id-ID", {
+      day: "numeric",
+      month: "short",
+      year: "numeric",
+    });
+
   return {
     totalIncome,
     totalExpenses,
@@ -70,26 +90,44 @@ function buildFinanceSummary(data: FinanceData) {
     balance,
     topCategories,
     expensesByCategory,
-    context: `You are FinanceAI, a smart personal finance assistant. Current financial data (in Indonesian Rupiah):
+    formattedTransactions,
+    context: `You are FinanceAI, a smart personal finance assistant.
+
+IMPORTANT:
+- ONLY analyze transactions within this period
+- DO NOT assume data outside this range
+
+SUMMARY:
 - Balance: IDR ${balance.toLocaleString("id-ID")}
 - Income: IDR ${totalIncome.toLocaleString("id-ID")}
 - Expenses: IDR ${totalExpenses.toLocaleString("id-ID")}
 - Savings: IDR ${totalSavings.toLocaleString("id-ID")}
 - Investment: IDR ${totalInvestment.toLocaleString("id-ID")}
-- Top spending categories: ${topCategories || "No data"}
-Give concise, actionable financial advice. Be friendly and specific with IDR amounts.`,
+- Top categories: ${topCategories || "No data"}
+
+TRANSACTIONS:
+${JSON.stringify(formattedTransactions, null, 2)}
+
+INSTRUCTION:
+- Answer ONLY using the data above
+- Be concise and actionable
+- Always use IDR currency
+`,
   };
 }
 
 // Pure function outside component — no hook issues
-function generateInsightsFromData(financeData: FinanceData): Insight[] {
+function generateInsightsFromData(
+  financeData: FinanceData,
+  transactions: any[],
+): Insight[] {
   const {
     totalIncome,
     totalExpenses,
     totalSavings,
     totalInvestment,
     expensesByCategory,
-  } = buildFinanceSummary(financeData);
+  } = buildFinanceSummary(financeData, transactions);
 
   const newInsights: Insight[] = [];
 
@@ -224,17 +262,19 @@ export default function Insights() {
   const [insights, setInsights] = useState<Insight[]>([]);
   const [messages, setMessages] = useState<Message[]>([]);
   const [question, setQuestion] = useState("");
+  const [allItems, setAllItems] = useState<any[]>([]);
   const [loadingAI, setLoadingAI] = useState(false);
   const [ollamaStatus, setOllamaStatus] = useState<
     "checking" | "online" | "offline"
   >("checking");
   const [error, setError] = useState<string | null>(null);
   const scrollRef = useRef<ScrollView>(null);
+  const { startDate, endDate, setStartDate, setEndDate } = useDateStore();
 
   useEffect(() => {
     loadFinanceData();
     checkOllama();
-  }, []);
+  }, [startDate, endDate]);
 
   async function checkOllama() {
     try {
@@ -245,7 +285,7 @@ export default function Insights() {
     }
   }
 
-  const { startDate, endDate, setStartDate, setEndDate } = useDateStore();
+  // const { startDate, endDate, setStartDate, setEndDate } = useDateStore();
 
   const start = startDate;
   const end = endDate;
@@ -255,21 +295,52 @@ export default function Insights() {
       // const { start, end } = getCustomDateRange();
       const raw = await fetchAllFinanceData(start, end);
 
+      fetchAllFinanceData(start, end).then((data) => {
+        const combine = [
+          ...data.income.map((i: any) => ({ ...i, type: "income" })),
+          ...data.expenses.map((i: any) => ({ ...i, type: "expense" })),
+          ...data.saving.map((i: any) => ({ ...i, type: "saving" })),
+          ...data.investment.map((i: any) => ({ ...i, type: "investment" })),
+        ]
+          .filter((i: any) => inRange(i.date))
+          .sort(
+            (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime(),
+          );
+        setAllItems(combine);
+      });
+
       function inRange(dateStr: string) {
         if (!dateStr) return false;
         const d = new Date(dateStr);
         return d >= start && d <= end;
       }
 
+      // ✅ Combine + filter sekali saja
+      const combined = [
+        ...raw.income.map((i: any) => ({ ...i, type: "income" })),
+        ...raw.expenses.map((i: any) => ({ ...i, type: "expense" })),
+        ...raw.saving.map((i: any) => ({ ...i, type: "saving" })),
+        ...raw.investment.map((i: any) => ({ ...i, type: "investment" })),
+      ]
+        .filter((i) => inRange(i.date))
+        .sort(
+          (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime(),
+        );
+
+      setAllItems(combined);
+
+      // ✅ Filter per category (consistent with combined)
       const filtered: FinanceData = {
-        income: raw.income.filter((i: any) => inRange(i.date)),
-        expenses: raw.expenses.filter((i: any) => inRange(i.date)),
-        saving: raw.saving.filter((i: any) => inRange(i.date)),
-        investment: raw.investment.filter((i: any) => inRange(i.date)),
+        income: combined.filter((i) => i.type === "income"),
+        expenses: combined.filter((i) => i.type === "expense"),
+        saving: combined.filter((i) => i.type === "saving"),
+        investment: combined.filter((i) => i.type === "investment"),
       };
 
       setData(filtered);
-      setInsights(generateInsightsFromData(filtered));
+
+      // ✅ IMPORTANT: use combined, not stale allItems
+      setInsights(generateInsightsFromData(filtered, combined));
     } catch {
       setError("Failed to load financial data");
     } finally {
@@ -287,7 +358,7 @@ export default function Insights() {
 
     setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 100);
 
-    const { context } = buildFinanceSummary(data);
+    const { context } = buildFinanceSummary(data, allItems, start, end);
 
     try {
       const res = await fetch(`${API_BASE}/ollama/chat`, {
@@ -382,18 +453,20 @@ export default function Insights() {
           Add some transactions to see insights!
         </Text>
       ) : (
-        insights.map((insight) => (
-          <View
-            key={insight.id}
-            style={[styles.insightCard, { borderLeftColor: insight.color }]}
-          >
-            <Text style={styles.insightIcon}>{insight.icon}</Text>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.insightTitle}>{insight.title}</Text>
-              <Text style={styles.insightDesc}>{insight.description}</Text>
+        <ScrollView ref={scrollRef} showsVerticalScrollIndicator={false}>
+          {insights.map((insight) => (
+            <View
+              key={insight.id}
+              style={[styles.insightCard, { borderLeftColor: insight.color }]}
+            >
+              <Text style={styles.insightIcon}>{insight.icon}</Text>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.insightTitle}>{insight.title}</Text>
+                <Text style={styles.insightDesc}>{insight.description}</Text>
+              </View>
             </View>
-          </View>
-        ))
+          ))}
+        </ScrollView>
       )}
 
       {/* Chat section */}
